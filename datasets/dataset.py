@@ -51,7 +51,7 @@ class PairedDataset(Data.Dataset):
         inp, out = Image.open(inp), Image.open(out)
         inp, out = self.to_tensor(inp), self.to_tensor(out)
         inp, out = self.resize(inp), self.resize(out)
-        return inp, out
+        return inp, out, self.input_imgs[index].split("/")[-1].split("\\")[-1]
     
     def __len__(self):
         return len(self.input_imgs)
