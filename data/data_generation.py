@@ -9,6 +9,47 @@ import matplotlib.pyplot as plt
 from tqdm import tqdm
 
 
+def get_gaussian_kernel(kernel_size=5, sigma=1.0, device='cpu'):
+    """Create a 2D Gaussian kernel"""
+    # Create 1D Gaussian
+    ax = torch.arange(kernel_size, device=device) - kernel_size // 2
+    ax = torch.exp(-0.5 * (ax / sigma) ** 2)
+    kernel_1d = ax / ax.sum()
+
+    # Outer product to get 2D kernel
+    kernel_2d = torch.outer(kernel_1d, kernel_1d)
+    kernel_2d = kernel_2d / kernel_2d.sum()
+    return kernel_2d
+
+def apply_gaussian_blur(img: torch.Tensor, kernel_size=5, sigma=1.0):
+    """
+    Apply Gaussian blur to a batched tensor image.
+    Args:
+        img: Tensor of shape (B, C, H, W)
+        kernel_size: int, size of the Gaussian kernel
+        sigma: float, standard deviation of Gaussian
+    Returns:
+        Blurred image of shape (B, C, H, W)
+    """
+    inp_dim = img.ndim
+    if inp_dim == 2:
+        img = img.unsqueeze(0).unsqueeze(0)
+    B, C, H, W = img.shape
+    device = img.device
+
+    # Get Gaussian kernel and reshape to (1,1,k,k)
+    kernel = get_gaussian_kernel(kernel_size, sigma, device)
+    kernel = kernel.view(1, 1, kernel_size, kernel_size)
+
+    # Expand kernel to apply to all channels
+    kernel = kernel.repeat(C, 1, 1, 1)
+
+    # Apply convolution (groups=C for depthwise conv)
+    img_blur = F.conv2d(img, kernel, padding=kernel_size//2, groups=C)
+    if inp_dim == 2:
+        img_blur = img_blur.squeeze(0).squeeze(0)
+    return img_blur
+
 def to_complex(a):
     return a.to(torch.complex64)
 
@@ -96,6 +137,7 @@ if __name__ == "__main__":
     amplitude = torch.ones((N, N))
     for i in tqdm(range(4500), desc="generate train"):
         image = torch.rand(w, w)*255.0
+        image = apply_gaussian_blur(image, kernel_size=5, sigma=10)
         pad_img = pad_image(image, target_height=N, target_width=N)
         intensity = full_propagation(pad_img, H1, phase_avg, amplitude=amplitude) / 1000
         image_file = "train/images/{}.npy".format(i+1)
@@ -104,6 +146,7 @@ if __name__ == "__main__":
         np.save(pat_file, intensity.numpy().astype("f4"))
     for i in tqdm(range(500), desc="generate val"):
         image = torch.rand(w, w)*255.0
+        image = apply_gaussian_blur(image, kernel_size=5, sigma=10)
         pad_img = pad_image(image, target_height=N, target_width=N)
         intensity = full_propagation(pad_img, H1, phase_avg, amplitude=amplitude) / 1000
         image_file = "val/images/{}.npy".format(i+4501)
